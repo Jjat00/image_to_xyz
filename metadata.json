@@ -1,0 +1,5 @@
+{
+  "name": "DepthGen 3D",
+  "description": "Convert RGB images to Depth Maps using Gemini 2.5 and visualize them as interactive 3D Point Clouds.",
+  "requestFramePermissions": []
+}
