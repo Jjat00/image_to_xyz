@@ -1,11 +1,11 @@
-# image_to_xyz — Frontend
+# image_to_xyz
 
 Aplicación web que convierte una **imagen 2D en una nube de puntos 3D navegable** usando un mapa de profundidad estimado por IA. El render se hace en el navegador con Three.js / React Three Fiber.
 
-Es la mitad **frontend** de un sistema en dos partes:
+Repo monorepo con dos partes:
 
-- `image_to_xyz` (este repo) — UI en React + Vite, generación de la nube de puntos y visor 3D.
-- [`Depth-Anything-V2`](../Depth-Anything-V2) — Backend Python (FastAPI) que sirve el modelo Depth-Anything-V2 para estimar profundidad.
+- **Frontend** (raíz) — UI en React + Vite, generación de la nube de puntos y visor 3D.
+- **Backend** ([`backend/`](./backend)) — FastAPI que envuelve el modelo [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2) y lo expone como API REST.
 
 ---
 
@@ -88,7 +88,12 @@ image_to_xyz/
 ├── utils/
 │   └── pointCloudUtils.ts            # RGB + depth → Float32Array de puntos
 ├── types.ts                          # AppState, DepthModel, ProcessingConfig
-└── .env                              # GEMINI_API_KEY (opcional)
+├── .env                              # GEMINI_API_KEY (opcional, no se commitea)
+└── backend/                          # Backend Python (FastAPI + Depth-Anything-V2)
+    ├── server.py                     # Wrapper FastAPI del modelo
+    ├── requirements.txt              # Dependencias del modelo
+    ├── depth_anything_v2/            # Código del modelo upstream
+    └── checkpoints/                  # .pth del modelo (no se commitea, se descarga)
 ```
 
 ---
@@ -98,20 +103,28 @@ image_to_xyz/
 ### Requisitos previos
 
 - Node.js 18+
-- Backend `Depth-Anything-V2` corriendo en `http://localhost:8000` (ver el [README del backend](../Depth-Anything-V2/README.md))
+- Python 3.10+
+- ~2 GB libres para el checkpoint del modelo (ver el [README del backend](./backend/README.md) para descarga)
 
 ### Pasos
 
-**Terminal 1 — Backend (en el otro repo):**
+**Terminal 1 — Backend (`backend/`):**
 
 ```bash
-cd ../Depth-Anything-V2
+cd backend
+python -m venv .venv
 source .venv/bin/activate
+pip install -r requirements.txt
+pip install fastapi uvicorn pydantic pillow opencv-python
+
+# Descarga el checkpoint en checkpoints/depth_anything_v2_vitl.pth
+# (ver backend/README.md para los enlaces)
+
 python server.py
 # Espera "Modelo cargado exitosamente en cpu" (o cuda/mps)
 ```
 
-**Terminal 2 — Frontend (este repo):**
+**Terminal 2 — Frontend (raíz del repo):**
 
 ```bash
 cd image_to_xyz
