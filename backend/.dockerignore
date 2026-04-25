@@ -1,0 +1,12 @@
+.venv/
+checkpoints/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pth
+assets/examples_video/
+assets/examples/
+metric_depth/
+README.md
+DA-2K.md
+.git/

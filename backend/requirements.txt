@@ -1,6 +1,16 @@
-gradio_imageslider
-gradio==4.29.0
+# PyTorch CPU build keeps the Docker image small enough for free/hobby
+# tiers. Override locally if you have a GPU.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.4.1
+torchvision==0.19.1
+
+# Inference + image processing
+opencv-python-headless
+pillow
+numpy
 matplotlib
-opencv-python
-torch
-torchvision
+
+# API
+fastapi
+uvicorn[standard]
+pydantic

@@ -4,7 +4,11 @@
  */
 
 const API_URL_STORAGE_KEY = "depth_server_url";
-const DEFAULT_API_URL = "/depth-api";
+
+// Production: set VITE_DEPTH_API_URL in Vercel to the Railway URL.
+// Dev: falls back to "/depth-api" which Vite proxies to localhost:8000.
+const ENV_API_URL = import.meta.env.VITE_DEPTH_API_URL as string | undefined;
+const DEFAULT_API_URL = ENV_API_URL || "/depth-api";
 
 export const setServerUrl = (url: string): void => {
   localStorage.setItem(API_URL_STORAGE_KEY, url);
