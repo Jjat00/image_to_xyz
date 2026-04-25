@@ -3,40 +3,239 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DepthGen 3D - RGB to Point Cloud</title>
+    <title>DepthGen 3D · Image to Point Cloud</title>
+    <meta name="description" content="Transform a single 2D image into an interactive 3D point cloud using AI depth estimation." />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+              mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+            },
+            colors: {
+              ink: {
+                900: '#06060a',
+                800: '#0b0b14',
+                700: '#10101c',
+              },
+            },
+          },
+        },
+      };
+    </script>
+
     <style>
-      body { margin: 0; overflow-x: hidden; background-color: #0f172a; color: white; }
-      /* Custom scrollbar for webkit */
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
+      :root {
+        color-scheme: dark;
       }
-      ::-webkit-scrollbar-track {
-        background: #1e293b; 
+
+      * {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
+
+      html, body {
+        margin: 0;
+        background: #06060a;
+        color: #e2e8f0;
+        font-family: 'Inter', system-ui, sans-serif;
+        overflow-x: hidden;
+      }
+
+      /* Animated monochrome mesh background */
+      body::before {
+        content: '';
+        position: fixed;
+        inset: -20%;
+        z-index: 0;
+        pointer-events: none;
+        background:
+          radial-gradient(ellipse 60% 50% at 15% 20%, rgba(255, 255, 255, 0.06), transparent 60%),
+          radial-gradient(ellipse 55% 50% at 85% 80%, rgba(255, 255, 255, 0.04), transparent 60%),
+          radial-gradient(ellipse 50% 40% at 50% 50%, rgba(255, 255, 255, 0.025), transparent 70%);
+        animation: meshFloat 24s ease-in-out infinite alternate;
+        filter: blur(40px);
+      }
+
+      /* Subtle noise overlay */
+      body::after {
+        content: '';
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        opacity: 0.025;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+
+      #root {
+        position: relative;
+        z-index: 1;
+      }
+
+      @keyframes meshFloat {
+        0%   { transform: translate(0, 0) scale(1); }
+        50%  { transform: translate(2%, -3%) scale(1.05); }
+        100% { transform: translate(-2%, 2%) scale(0.98); }
+      }
+
+      /* Glass utilities */
+      .glass {
+        background: rgba(255, 255, 255, 0.035);
+        backdrop-filter: blur(24px) saturate(180%);
+        -webkit-backdrop-filter: blur(24px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        box-shadow:
+          0 10px 40px -10px rgba(0, 0, 0, 0.5),
+          inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      }
+
+      .glass-strong {
+        background: rgba(255, 255, 255, 0.055);
+        backdrop-filter: blur(32px) saturate(200%);
+        -webkit-backdrop-filter: blur(32px) saturate(200%);
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        box-shadow:
+          0 20px 60px -10px rgba(0, 0, 0, 0.6),
+          inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      }
+
+      .glass-card {
+        background: linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015));
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      /* Monochrome text gradient */
+      .text-gradient {
+        background: linear-gradient(135deg, #ffffff 0%, #d4d4d8 60%, #a1a1aa 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      /* Subtle white border highlight */
+      .grad-border {
+        position: relative;
+      }
+      .grad-border::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        padding: 1px;
+        background: linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04));
+        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+                mask-composite: exclude;
+        pointer-events: none;
+        opacity: 0.7;
+      }
+
+      /* Scrollbar */
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb {
-        background: #475569; 
+        background: rgba(148, 163, 184, 0.18);
         border-radius: 4px;
       }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #64748b; 
+      ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.35); }
+
+      .custom-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(148,163,184,0.2) transparent; }
+
+      /* Range slider — monochrome, sharp */
+      input[type='range'] {
+        -webkit-appearance: none;
+        appearance: none;
+        background: transparent;
+      }
+      input[type='range']::-webkit-slider-runnable-track {
+        height: 3px;
+        background: rgba(255,255,255,0.18);
+        border-radius: 2px;
+      }
+      input[type='range']::-moz-range-track {
+        height: 3px;
+        background: rgba(255,255,255,0.18);
+        border-radius: 2px;
+      }
+      input[type='range']::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 14px;
+        height: 14px;
+        border-radius: 2px;
+        background: #fff;
+        border: 0;
+        margin-top: -5.5px;
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.5);
+        cursor: grab;
+        transition: transform 0.15s ease;
+      }
+      input[type='range']::-webkit-slider-thumb:hover { transform: scale(1.15); }
+      input[type='range']::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(0.95); }
+      input[type='range']::-moz-range-thumb {
+        width: 14px; height: 14px; border-radius: 2px;
+        background: #fff; border: 0;
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
+        cursor: grab;
+      }
+      input[type='range']:disabled::-webkit-slider-thumb { background: #52525b; box-shadow: none; }
+      input[type='range']:disabled::-webkit-slider-runnable-track { background: rgba(82, 82, 91, 0.4); }
+
+      /* Animations */
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes scaleIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+      @keyframes shimmer { 0% { background-position: -1000px 0; } 100% { background-position: 1000px 0; } }
+      @keyframes pulseSoft { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+      .animate-fade-in { animation: fadeIn 0.4s ease-out both; }
+      .animate-scale-in { animation: scaleIn 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+      .animate-pulse-soft { animation: pulseSoft 2s ease-in-out infinite; }
+
+      .shimmer-bg {
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+        background-size: 1000px 100%;
+        animation: shimmer 2s infinite linear;
+      }
+
+      /* Drag-over highlight */
+      .drag-active {
+        outline: 2px dashed rgba(255, 255, 255, 0.5);
+        outline-offset: -8px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      /* Focus visible */
+      :focus-visible {
+        outline: 1.5px solid rgba(255, 255, 255, 0.6);
+        outline-offset: 2px;
+        border-radius: 2px;
       }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "@react-three/drei": "https://esm.sh/@react-three/drei@^10.7.7",
-    "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "three": "https://esm.sh/three@^0.182.0",
-    "@react-three/fiber": "https://esm.sh/@react-three/fiber@^9.5.0",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3"
-  }
-}
-</script>
-</head>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "@react-three/drei": "https://esm.sh/@react-three/drei@^10.7.7",
+          "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
+          "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+          "three": "https://esm.sh/three@^0.182.0",
+          "@react-three/fiber": "https://esm.sh/@react-three/fiber@^9.5.0",
+          "react/": "https://esm.sh/react@^19.2.3/",
+          "react": "https://esm.sh/react@^19.2.3"
+        }
+      }
+    </script>
+  </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>

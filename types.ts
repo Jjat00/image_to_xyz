@@ -14,15 +14,14 @@ export enum AppState {
 }
 
 export enum DepthModel {
-  DEPTH_ANYTHING_V2 = 'depth-anything-v2',
   LOCAL_SERVER = 'local-server',
   HUGGINGFACE = 'huggingface',
   OPENAI = 'openai'
 }
 
 export interface ProcessingConfig {
-  sampleRate: number; // 1 = every pixel, 2 = every 2nd pixel, etc.
-  depthScale: number; // Multiplier for Z axis
+  sampleRate: number;
+  depthScale: number;
   pointSize: number;
-  depthModel: DepthModel; // Model to use for depth estimation
+  depthModel: DepthModel;
 }

@@ -1,10 +1,9 @@
-import React, { useMemo, useRef, useEffect } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import React, { useRef, useEffect, useState } from 'react';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Center, GizmoHelper, GizmoViewport } from '@react-three/drei';
 import * as THREE from 'three';
 import { PointCloudData } from '../types';
 
-// Fix for missing JSX types in some environments
 declare global {
   namespace JSX {
     interface IntrinsicElements {
@@ -14,6 +13,7 @@ declare global {
       pointsMaterial: any;
       ambientLight: any;
       color: any;
+      fog: any;
     }
   }
 }
@@ -26,18 +26,13 @@ interface PointCloudProps {
 const PointCloud: React.FC<PointCloudProps> = ({ data, pointSize }) => {
   const geometryRef = useRef<THREE.BufferGeometry>(null);
 
-  // Update bounding sphere when data changes
-  // Attributes are updated declaratively via the children of bufferGeometry.
   useEffect(() => {
-    console.log('PointCloud data changed, positions length:', data.positions.length);
-    if (geometryRef.current) {
-      geometryRef.current.computeBoundingSphere();
-      // Ensure attributes are updated
-      const positionAttr = geometryRef.current.getAttribute('position');
-      const colorAttr = geometryRef.current.getAttribute('color');
-      if (positionAttr) positionAttr.needsUpdate = true;
-      if (colorAttr) colorAttr.needsUpdate = true;
-    }
+    if (!geometryRef.current) return;
+    geometryRef.current.computeBoundingSphere();
+    const positionAttr = geometryRef.current.getAttribute('position');
+    const colorAttr = geometryRef.current.getAttribute('color');
+    if (positionAttr) positionAttr.needsUpdate = true;
+    if (colorAttr) colorAttr.needsUpdate = true;
   }, [data]);
 
   return (
@@ -59,24 +54,22 @@ const PointCloud: React.FC<PointCloudProps> = ({ data, pointSize }) => {
       <pointsMaterial
         size={pointSize}
         vertexColors
-        sizeAttenuation={true}
-        depthWrite={true}
+        sizeAttenuation
+        depthWrite
         transparent={false}
       />
     </points>
   );
 };
 
-// Camera adjustment helper
-const CameraAdjuster = () => {
-    const { camera } = useThree();
-    useEffect(() => {
-        camera.position.set(0, 0, 15);
-        camera.lookAt(0, 0, 0);
-    }, [camera]);
-    return null;
-}
-
+const CameraAdjuster: React.FC = () => {
+  const { camera } = useThree();
+  useEffect(() => {
+    camera.position.set(0, 0, 15);
+    camera.lookAt(0, 0, 0);
+  }, [camera]);
+  return null;
+};
 
 interface Scene3DProps {
   data: PointCloudData;
@@ -84,22 +77,56 @@ interface Scene3DProps {
 }
 
 const Scene3D: React.FC<Scene3DProps> = ({ data, pointSize }) => {
+  const [hintVisible, setHintVisible] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setHintVisible(false), 6000);
+    return () => clearTimeout(t);
+  }, []);
+
+  const pointCount = data.positions.length / 3;
+  const formattedCount =
+    pointCount >= 1000
+      ? `${(pointCount / 1000).toFixed(1)}k`
+      : `${pointCount}`;
+
   return (
-    <div className="w-full h-full bg-black rounded-lg overflow-hidden border border-slate-700 shadow-2xl relative">
-       <div className="hidden md:block absolute top-4 left-4 z-10 bg-slate-800/80 backdrop-blur px-3 py-1 rounded text-xs text-slate-300 pointer-events-none">
-          Left Click: Rotate | Right Click: Pan | Scroll: Zoom
-       </div>
-      <Canvas camera={{ position: [0, 0, 15], fov: 50 }}>
-        <color attach="background" args={['#050505']} />
-        <ambientLight intensity={0.5} />
-        
+    <div className="relative w-full h-full rounded-md overflow-hidden border border-white/10 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.6)] bg-black">
+      {/* Top-left: stats */}
+      <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
+        <div className="glass rounded-sm px-3 py-1.5 flex items-center gap-2 text-[11px] font-mono text-white/80">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)] animate-pulse" />
+          {formattedCount} points
+        </div>
+        <div className="hidden sm:block glass rounded-sm px-3 py-1.5 text-[11px] font-mono text-white/60">
+          {data.width}×{data.height}
+        </div>
+      </div>
+
+      {/* Top-right: hint (auto-hides) */}
+      {hintVisible && (
+        <div className="absolute top-3 right-3 z-10 hidden md:flex items-center gap-3 glass rounded-sm px-3 py-1.5 text-[11px] font-mono text-white/70 animate-fade-in">
+          <span><kbd className="text-white/90">L-Click</kbd> rotate</span>
+          <span className="text-white/30">·</span>
+          <span><kbd className="text-white/90">R-Click</kbd> pan</span>
+          <span className="text-white/30">·</span>
+          <span><kbd className="text-white/90">Scroll</kbd> zoom</span>
+        </div>
+      )}
+
+      <Canvas camera={{ position: [0, 0, 15], fov: 50 }} dpr={[1, 2]}>
+        <color attach="background" args={['#04040a']} />
+        <fog attach="fog" args={['#04040a', 25, 55]} />
+        <ambientLight intensity={0.6} />
+        <CameraAdjuster />
+
         <Center>
-            <PointCloud data={data} pointSize={pointSize} />
+          <PointCloud data={data} pointSize={pointSize} />
         </Center>
-        
-        <OrbitControls makeDefault />
-        <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
-          <GizmoViewport axisColors={['#9d4b4b', '#2f7f4f', '#3b5b9d']} labelColor="white" />
+
+        <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
+        <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
+          <GizmoViewport axisColors={['#f87171', '#4ade80', '#60a5fa']} labelColor="white" />
         </GizmoHelper>
       </Canvas>
     </div>

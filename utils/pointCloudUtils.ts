@@ -51,7 +51,8 @@ export const generatePointsFromImages = async (
   const depthData = ctx.getImageData(0, 0, width, height).data;
 
   // Calculate number of points based on sample rate
-  const numPoints = Math.floor(width / sampleRate) * Math.floor(height / sampleRate);
+  // Use ceil to match the loop below (y/x < dim with step=sampleRate yields ceil(dim/step) iterations).
+  const numPoints = Math.ceil(width / sampleRate) * Math.ceil(height / sampleRate);
   
   const positions = new Float32Array(numPoints * 3);
   const colors = new Float32Array(numPoints * 3);

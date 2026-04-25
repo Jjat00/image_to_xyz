@@ -18,18 +18,46 @@ import {
 
 interface ControlsProps {
   config: ProcessingConfig;
-  onConfigChange: (newConfig: ProcessingConfig) => void;
-  disabled: boolean;
-  onRegenerate: () => void;
+  onConfigChange: (next: ProcessingConfig) => void;
+  processing: boolean;
   hasData: boolean;
+  onRegenerate: () => void;
 }
+
+type ServerStatus = "checking" | "online" | "offline";
+
+const PROVIDERS: Array<{
+  value: DepthModel;
+  label: string;
+  blurb: string;
+  badge: string;
+}> = [
+  {
+    value: DepthModel.LOCAL_SERVER,
+    label: "Local Server",
+    blurb: "Depth-Anything-V2 vía FastAPI local",
+    badge: "Recomendado",
+  },
+  {
+    value: DepthModel.HUGGINGFACE,
+    label: "Hugging Face",
+    blurb: "Spaces · cloud, gratis con token",
+    badge: "Cloud",
+  },
+  {
+    value: DepthModel.OPENAI,
+    label: "OpenAI",
+    blurb: "GPT Image · API key requerida",
+    badge: "API Key",
+  },
+];
 
 const Controls: React.FC<ControlsProps> = ({
   config,
   onConfigChange,
-  disabled,
-  onRegenerate,
+  processing,
   hasData,
+  onRegenerate,
 }) => {
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -40,7 +68,7 @@ const Controls: React.FC<ControlsProps> = ({
   const [hasHfToken, setHasHfToken] = useState(hasHuggingFaceToken());
 
   const [serverUrl, setServerUrlState] = useState(getServerUrl());
-  const [serverStatus, setServerStatus] = useState<"checking" | "online" | "offline">("checking");
+  const [serverStatus, setServerStatus] = useState<ServerStatus>("checking");
   const [showServerConfig, setShowServerConfig] = useState(false);
 
   useEffect(() => {
@@ -48,574 +76,426 @@ const Controls: React.FC<ControlsProps> = ({
     setHasHfToken(hasHuggingFaceToken());
   }, [config.depthModel]);
 
-  // Verificar estado del servidor cuando se selecciona LOCAL_SERVER
   useEffect(() => {
-    if (config.depthModel === DepthModel.LOCAL_SERVER) {
-      setServerStatus("checking");
-      checkServerHealth().then((isOnline) => {
-        setServerStatus(isOnline ? "online" : "offline");
-      });
-    }
+    if (config.depthModel !== DepthModel.LOCAL_SERVER) return;
+    let cancelled = false;
+    setServerStatus("checking");
+    checkServerHealth().then((online) => {
+      if (!cancelled) setServerStatus(online ? "online" : "offline");
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [config.depthModel, serverUrl]);
+
+  const update = <K extends keyof ProcessingConfig>(
+    key: K,
+    value: ProcessingConfig[K]
+  ) => onConfigChange({ ...config, [key]: value });
 
   const handleSaveServerUrl = () => {
     setServerUrl(serverUrl);
     setShowServerConfig(false);
     setServerStatus("checking");
-    checkServerHealth().then((isOnline) => {
-      setServerStatus(isOnline ? "online" : "offline");
-    });
+    checkServerHealth().then((online) =>
+      setServerStatus(online ? "online" : "offline")
+    );
   };
 
   const handleSaveHfToken = () => {
-    if (hfTokenInput.trim()) {
-      setHuggingFaceToken(hfTokenInput.trim());
-      setHasHfToken(true);
-      setShowHfTokenInput(false);
-      setHfTokenInput("");
-    }
-  };
-
-  const handleClearHfToken = () => {
-    clearHuggingFaceToken();
-    setHasHfToken(false);
+    if (!hfTokenInput.trim()) return;
+    setHuggingFaceToken(hfTokenInput.trim());
+    setHasHfToken(true);
+    setShowHfTokenInput(false);
     setHfTokenInput("");
   };
 
-  const handleChange = (
-    key: keyof ProcessingConfig,
-    value: number | DepthModel
-  ) => {
-    onConfigChange({ ...config, [key]: value });
-  };
-
   const handleSaveApiKey = () => {
-    if (apiKeyInput.trim()) {
-      setOpenAIApiKey(apiKeyInput.trim());
-      setHasApiKey(true);
-      setShowApiKeyInput(false);
-      setApiKeyInput("");
-    }
-  };
-
-  const handleClearApiKey = () => {
-    clearOpenAIApiKey();
-    setHasApiKey(false);
+    if (!apiKeyInput.trim()) return;
+    setOpenAIApiKey(apiKeyInput.trim());
+    setHasApiKey(true);
+    setShowApiKeyInput(false);
     setApiKeyInput("");
   };
 
-  return (
-    <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700 space-y-6">
-      <h3 className="text-lg font-bold text-white flex items-center gap-2">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className="h-5 w-5 text-indigo-400"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
+  const renderProviderCard = (p: typeof PROVIDERS[number]) => {
+    const selected = config.depthModel === p.value;
+    return (
+      <label
+        key={p.value}
+        className={`relative flex items-start gap-3 rounded-sm p-3 cursor-pointer transition-colors group ${
+          processing ? "opacity-60 cursor-not-allowed" : ""
+        } ${
+          selected
+            ? "bg-white/[0.07] border border-white/25"
+            : "bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] hover:border-white/10"
+        }`}
+      >
+        <input
+          type="radio"
+          name="depthModel"
+          value={p.value}
+          checked={selected}
+          disabled={processing}
+          onChange={(e) => update("depthModel", e.target.value as DepthModel)}
+          className="sr-only"
+        />
+        <div
+          className={`mt-0.5 w-3.5 h-3.5 rounded-sm border flex items-center justify-center shrink-0 transition-colors ${
+            selected ? "border-white" : "border-white/25 group-hover:border-white/40"
+          }`}
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-          />
-        </svg>
-        Settings
-      </h3>
-
-      {/* Model Selection */}
-      <div className="space-y-3">
-        <h4 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-4 w-4 text-emerald-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-            />
-          </svg>
-          Depth Model
-        </h4>
-
-        <div className="grid grid-cols-1 gap-2">
-          <label
-            className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-              config.depthModel === DepthModel.DEPTH_ANYTHING_V2
-                ? "bg-indigo-600/20 border-indigo-500 text-white"
-                : "bg-slate-900/50 border-slate-700 text-slate-400 hover:border-slate-600"
-            }`}
-          >
-            <input
-              type="radio"
-              name="depthModel"
-              value={DepthModel.DEPTH_ANYTHING_V2}
-              checked={config.depthModel === DepthModel.DEPTH_ANYTHING_V2}
-              onChange={(e) =>
-                handleChange("depthModel", e.target.value as DepthModel)
-              }
-              className="sr-only"
-            />
-            <div
-              className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                config.depthModel === DepthModel.DEPTH_ANYTHING_V2
-                  ? "border-indigo-500"
-                  : "border-slate-600"
-              }`}
-            >
-              {config.depthModel === DepthModel.DEPTH_ANYTHING_V2 && (
-                <div className="w-2 h-2 rounded-full bg-indigo-500" />
-              )}
+          {selected && <div className="w-1.5 h-1.5 bg-white" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2 mb-0.5">
+            <div className={`text-sm font-semibold ${selected ? "text-white" : "text-zinc-200"}`}>
+              {p.label}
             </div>
-            <div className="flex-1">
-              <div className="font-medium text-sm">Depth Anything V2</div>
-              <div className="text-xs text-slate-500">
-                Local, sin costo, rápido
-              </div>
-            </div>
-            <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded">
-              Gratis
+            <span className="text-[10px] tracking-wider uppercase font-mono px-1.5 py-0.5 rounded-sm border bg-white/5 text-white/60 border-white/10">
+              {p.badge}
             </span>
-          </label>
+          </div>
+          <div className="text-xs text-zinc-400">{p.blurb}</div>
+        </div>
+      </label>
+    );
+  };
 
-          {/* Local Server Option */}
-          <label
-            className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-              config.depthModel === DepthModel.LOCAL_SERVER
-                ? "bg-indigo-600/20 border-indigo-500 text-white"
-                : "bg-slate-900/50 border-slate-700 text-slate-400 hover:border-slate-600"
-            }`}
-          >
-            <input
-              type="radio"
-              name="depthModel"
-              value={DepthModel.LOCAL_SERVER}
-              checked={config.depthModel === DepthModel.LOCAL_SERVER}
-              onChange={(e) =>
-                handleChange("depthModel", e.target.value as DepthModel)
-              }
-              className="sr-only"
-            />
-            <div
-              className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                config.depthModel === DepthModel.LOCAL_SERVER
-                  ? "border-indigo-500"
-                  : "border-slate-600"
-              }`}
-            >
-              {config.depthModel === DepthModel.LOCAL_SERVER && (
-                <div className="w-2 h-2 rounded-full bg-indigo-500" />
-              )}
-            </div>
-            <div className="flex-1">
-              <div className="font-medium text-sm">Local Server</div>
-              <div className="text-xs text-slate-500">
-                Depth Anything V2 (Python API)
-              </div>
-            </div>
-            <span className="text-xs px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded">
-              GPU
-            </span>
-          </label>
+  return (
+    <div className="space-y-5">
+      {/* Provider section */}
+      <section className="space-y-2.5">
+        <SectionTitle icon={IconCpu} label="Depth Model" />
 
-          {/* Local Server Configuration */}
-          {config.depthModel === DepthModel.LOCAL_SERVER && (
-            <div className="p-3 bg-slate-900/50 rounded-lg border border-slate-700 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm">
-                  {serverStatus === "checking" ? (
-                    <>
-                      <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-                      <span className="text-yellow-400">Verificando...</span>
-                    </>
-                  ) : serverStatus === "online" ? (
-                    <>
-                      <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                      <span className="text-emerald-400">Servidor conectado</span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="w-2 h-2 rounded-full bg-red-400" />
-                      <span className="text-red-400">Servidor offline</span>
-                    </>
-                  )}
-                </div>
-                <button
-                  onClick={() => setShowServerConfig(!showServerConfig)}
-                  className="text-xs text-slate-400 hover:text-slate-300 transition-colors"
-                >
-                  {showServerConfig ? "Cerrar" : "Configurar"}
-                </button>
-              </div>
-              
-              {showServerConfig && (
-                <div className="space-y-2 pt-2 border-t border-slate-700">
-                  <label className="text-xs text-slate-400">URL del servidor:</label>
-                  <input
-                    type="text"
-                    value={serverUrl}
-                    onChange={(e) => setServerUrlState(e.target.value)}
-                    placeholder="http://localhost:8000"
-                    className="w-full bg-slate-800 border border-slate-600 text-slate-200 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2"
-                  />
-                  <button
-                    onClick={handleSaveServerUrl}
-                    className="w-full py-1.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-medium transition-colors"
-                  >
-                    Guardar y verificar
-                  </button>
-                </div>
-              )}
-              
-              {serverStatus === "offline" && !showServerConfig && (
-                <div className="text-xs text-slate-500 mt-1">
-                  Ejecuta: <code className="bg-slate-800 px-1 rounded">python server.py</code>
-                </div>
-              )}
-            </div>
-          )}
-
-          <label
-            className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-              config.depthModel === DepthModel.HUGGINGFACE
-                ? "bg-indigo-600/20 border-indigo-500 text-white"
-                : "bg-slate-900/50 border-slate-700 text-slate-400 hover:border-slate-600"
-            }`}
-          >
-            <input
-              type="radio"
-              name="depthModel"
-              value={DepthModel.HUGGINGFACE}
-              checked={config.depthModel === DepthModel.HUGGINGFACE}
-              onChange={(e) =>
-                handleChange("depthModel", e.target.value as DepthModel)
-              }
-              className="sr-only"
-            />
-            <div
-              className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                config.depthModel === DepthModel.HUGGINGFACE
-                  ? "border-indigo-500"
-                  : "border-slate-600"
-              }`}
-            >
-              {config.depthModel === DepthModel.HUGGINGFACE && (
-                <div className="w-2 h-2 rounded-full bg-indigo-500" />
-              )}
-            </div>
-            <div className="flex-1">
-              <div className="font-medium text-sm">Hugging Face</div>
-              <div className="text-xs text-slate-500">
-                Depth Anything V2 (Cloud)
-              </div>
-            </div>
-            <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded">
-              Gratis
-            </span>
-          </label>
-
-          {/* Hugging Face Token Configuration */}
-          {config.depthModel === DepthModel.HUGGINGFACE && (
-            <div className="p-3 bg-slate-900/50 rounded-lg border border-slate-700 space-y-2">
-              <div className="text-xs text-slate-400 mb-2">
-                Token opcional para más cuota (gratis en huggingface.co)
-              </div>
-              {hasHfToken ? (
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm text-emerald-400">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-4 w-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    Token configurado
-                  </div>
-                  <button
-                    onClick={handleClearHfToken}
-                    className="text-xs text-red-400 hover:text-red-300 transition-colors"
-                  >
-                    Eliminar
-                  </button>
-                </div>
-              ) : showHfTokenInput ? (
-                <div className="space-y-2">
-                  <input
-                    type="password"
-                    value={hfTokenInput}
-                    onChange={(e) => setHfTokenInput(e.target.value)}
-                    placeholder="hf_..."
-                    className="w-full bg-slate-800 border border-slate-600 text-slate-200 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleSaveHfToken}
-                      className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium transition-colors"
-                    >
-                      Guardar
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowHfTokenInput(false);
-                        setHfTokenInput("");
-                      }}
-                      className="py-1.5 px-3 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded text-xs transition-colors"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setShowHfTokenInput(true)}
-                  className="w-full py-2 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
-                    />
-                  </svg>
-                  Agregar Token (más cuota)
-                </button>
-              )}
-            </div>
-          )}
-
-          <label
-            className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-              config.depthModel === DepthModel.OPENAI
-                ? "bg-indigo-600/20 border-indigo-500 text-white"
-                : "bg-slate-900/50 border-slate-700 text-slate-400 hover:border-slate-600"
-            }`}
-          >
-            <input
-              type="radio"
-              name="depthModel"
-              value={DepthModel.OPENAI}
-              checked={config.depthModel === DepthModel.OPENAI}
-              onChange={(e) =>
-                handleChange("depthModel", e.target.value as DepthModel)
-              }
-              className="sr-only"
-            />
-            <div
-              className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                config.depthModel === DepthModel.OPENAI
-                  ? "border-indigo-500"
-                  : "border-slate-600"
-              }`}
-            >
-              {config.depthModel === DepthModel.OPENAI && (
-                <div className="w-2 h-2 rounded-full bg-indigo-500" />
-              )}
-            </div>
-            <div className="flex-1">
-              <div className="font-medium text-sm">OpenAI</div>
-              <div className="text-xs text-slate-500">GPT Image 1.5</div>
-            </div>
-            <span className="text-xs px-2 py-0.5 bg-amber-500/20 text-amber-400 rounded">
-              API Key
-            </span>
-          </label>
+        <div className="flex flex-col gap-2">
+          {PROVIDERS.map(renderProviderCard)}
         </div>
 
-        {/* OpenAI API Key Configuration */}
-        {config.depthModel === DepthModel.OPENAI && (
-          <div className="mt-3 p-3 bg-slate-900/50 rounded-lg border border-slate-700 space-y-2">
-            {hasApiKey ? (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-emerald-400">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                  API Key configurada
-                </div>
+        {/* Provider-specific config panels */}
+        {config.depthModel === DepthModel.LOCAL_SERVER && (
+          <div className="rounded-sm p-3 space-y-2 bg-white/[0.02] border border-white/8 animate-fade-in">
+            <div className="flex items-center justify-between gap-2">
+              <StatusPill status={serverStatus} />
+              <button
+                type="button"
+                onClick={() => setShowServerConfig((v) => !v)}
+                className="text-[11px] font-medium text-zinc-400 hover:text-white transition-colors px-2 py-1 rounded-sm hover:bg-white/5"
+              >
+                {showServerConfig ? "Cerrar" : "Configurar URL"}
+              </button>
+            </div>
+            {showServerConfig && (
+              <div className="space-y-2 pt-2 border-t border-white/5">
+                <input
+                  type="text"
+                  value={serverUrl}
+                  onChange={(e) => setServerUrlState(e.target.value)}
+                  placeholder="/depth-api o http://host:8000"
+                  className="w-full bg-black/30 border border-white/10 text-zinc-200 text-sm rounded-sm focus:ring-1 focus:ring-white/40 focus:border-white/30 block p-2 font-mono outline-none"
+                />
                 <button
-                  onClick={handleClearApiKey}
-                  className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                  type="button"
+                  onClick={handleSaveServerUrl}
+                  className="w-full py-1.5 px-3 rounded-sm text-xs font-semibold bg-white text-black hover:bg-zinc-200 transition-colors"
                 >
-                  Eliminar
+                  Guardar y verificar
                 </button>
               </div>
-            ) : showApiKeyInput ? (
-              <div className="space-y-2">
-                <input
-                  type="password"
-                  value={apiKeyInput}
-                  onChange={(e) => setApiKeyInput(e.target.value)}
-                  placeholder="sk-..."
-                  className="w-full bg-slate-800 border border-slate-600 text-slate-200 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2"
-                />
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleSaveApiKey}
-                    className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium transition-colors"
-                  >
-                    Guardar
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowApiKeyInput(false);
-                      setApiKeyInput("");
-                    }}
-                    className="py-1.5 px-3 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded text-xs transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                </div>
+            )}
+            {serverStatus === "offline" && !showServerConfig && (
+              <div className="text-[11px] text-zinc-400 leading-relaxed">
+                Levanta el backend con{" "}
+                <code className="font-mono text-white bg-white/5 px-1.5 py-0.5 rounded-sm">
+                  python server.py
+                </code>{" "}
+                en <code className="font-mono text-white">backend/</code>.
               </div>
-            ) : (
-              <button
-                onClick={() => setShowApiKeyInput(true)}
-                className="w-full py-2 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
-                  />
-                </svg>
-                Configurar API Key
-              </button>
             )}
           </div>
         )}
-      </div>
 
-      <div className="border-t border-slate-700 pt-4">
-        <h4 className="text-sm font-semibold text-slate-300 mb-3">
-          Point Cloud
-        </h4>
-      </div>
-
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-400 mb-1">
-            Depth Exaggeration ({config.depthScale.toFixed(1)}x)
-          </label>
-          <input
-            type="range"
-            min="1"
-            max="20"
-            step="0.5"
-            value={config.depthScale}
-            onChange={(e) =>
-              handleChange("depthScale", parseFloat(e.target.value))
-            }
-            disabled={disabled}
-            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-slate-400 mb-1">
-            Point Size ({config.pointSize.toFixed(2)})
-          </label>
-          <input
-            type="range"
-            min="0.01"
-            max="0.5"
-            step="0.01"
-            value={config.pointSize}
-            onChange={(e) =>
-              handleChange("pointSize", parseFloat(e.target.value))
-            }
-            disabled={disabled}
-            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-slate-400 mb-1">
-            Sample Rate ({config.sampleRate}px)
-          </label>
-          <div className="text-xs text-slate-500 mb-2">
-            Higher = Faster, Lower = More Detail
+        {config.depthModel === DepthModel.HUGGINGFACE && (
+          <div className="rounded-sm p-3 space-y-2 bg-white/[0.02] border border-white/8 animate-fade-in">
+            <p className="text-[11px] text-zinc-400">
+              Token opcional para más cuota{" "}
+              <a
+                href="https://huggingface.co/settings/tokens"
+                target="_blank"
+                rel="noreferrer"
+                className="text-white hover:text-zinc-300 underline-offset-2 hover:underline"
+              >
+                (huggingface.co/settings/tokens)
+              </a>
+            </p>
+            {hasHfToken ? (
+              <CredentialPill
+                label="Token configurado"
+                onClear={() => {
+                  clearHuggingFaceToken();
+                  setHasHfToken(false);
+                }}
+              />
+            ) : showHfTokenInput ? (
+              <CredentialInput
+                placeholder="hf_..."
+                value={hfTokenInput}
+                onChange={setHfTokenInput}
+                onSave={handleSaveHfToken}
+                onCancel={() => {
+                  setShowHfTokenInput(false);
+                  setHfTokenInput("");
+                }}
+              />
+            ) : (
+              <SetupButton onClick={() => setShowHfTokenInput(true)}>
+                Agregar token (más cuota)
+              </SetupButton>
+            )}
           </div>
+        )}
+
+        {config.depthModel === DepthModel.OPENAI && (
+          <div className="rounded-sm p-3 space-y-2 bg-white/[0.02] border border-white/8 animate-fade-in">
+            <p className="text-[11px] text-zinc-400">
+              Necesitas una API key de OpenAI con acceso a Images.
+            </p>
+            {hasApiKey ? (
+              <CredentialPill
+                label="API key configurada"
+                onClear={() => {
+                  clearOpenAIApiKey();
+                  setHasApiKey(false);
+                }}
+              />
+            ) : showApiKeyInput ? (
+              <CredentialInput
+                placeholder="sk-..."
+                value={apiKeyInput}
+                onChange={setApiKeyInput}
+                onSave={handleSaveApiKey}
+                onCancel={() => {
+                  setShowApiKeyInput(false);
+                  setApiKeyInput("");
+                }}
+              />
+            ) : (
+              <SetupButton onClick={() => setShowApiKeyInput(true)}>
+                Configurar API key
+              </SetupButton>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* Point cloud sliders */}
+      <section className="space-y-4 pt-4 border-t border-white/5">
+        <SectionTitle icon={IconDots} label="Point Cloud" />
+
+        <Slider
+          label="Depth Exaggeration"
+          value={config.depthScale}
+          display={`${config.depthScale.toFixed(1)}×`}
+          min={1}
+          max={20}
+          step={0.5}
+          disabled={processing}
+          onChange={(v) => update("depthScale", v)}
+        />
+
+        <Slider
+          label="Point Size"
+          value={config.pointSize}
+          display={config.pointSize.toFixed(2)}
+          min={0.01}
+          max={0.5}
+          step={0.01}
+          disabled={processing}
+          onChange={(v) => update("pointSize", v)}
+        />
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-medium text-zinc-300">Sample Rate</label>
+            <span className="text-[11px] font-mono text-white tabular-nums">{config.sampleRate}px</span>
+          </div>
+          <p className="text-[11px] text-zinc-500 mb-2">Higher = faster · Lower = more detail</p>
           <select
             value={config.sampleRate}
-            onChange={(e) =>
-              handleChange("sampleRate", parseInt(e.target.value))
-            }
-            disabled={disabled}
-            className="w-full bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2.5"
+            onChange={(e) => update("sampleRate", parseInt(e.target.value, 10))}
+            disabled={processing}
+            className="w-full bg-black/30 border border-white/10 text-zinc-200 text-sm rounded-sm focus:ring-1 focus:ring-white/40 focus:border-white/30 p-2.5 outline-none appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <option value="1">1 (Highest Quality)</option>
-            <option value="2">2 (Balanced)</option>
-            <option value="4">4 (High Performance)</option>
-            <option value="8">8 (Draft)</option>
+            <option value="1">1 — Highest quality</option>
+            <option value="2">2 — Balanced</option>
+            <option value="4">4 — High performance</option>
+            <option value="8">8 — Draft</option>
           </select>
         </div>
-      </div>
+      </section>
 
       {hasData && (
-        <div className="pt-4 border-t border-slate-700">
-          <button
-            onClick={onRegenerate}
-            className="w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium text-sm flex items-center justify-center gap-2"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-            Re-process Cloud
-          </button>
-        </div>
+        <button
+          onClick={onRegenerate}
+          disabled={processing}
+          className="w-full py-2.5 px-4 rounded-sm font-semibold text-sm flex items-center justify-center gap-2 transition-colors bg-white text-black hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <IconRefresh />
+          Re-procesar nube
+        </button>
       )}
     </div>
   );
 };
 
 export default Controls;
+
+/* -------- internal subcomponents -------- */
+
+const SectionTitle: React.FC<{ icon: React.FC; label: string }> = ({ icon: Icon, label }) => (
+  <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
+    <span className="w-5 h-5 rounded-sm bg-white/5 border border-white/10 flex items-center justify-center text-white">
+      <Icon />
+    </span>
+    {label}
+  </h3>
+);
+
+const StatusPill: React.FC<{ status: ServerStatus }> = ({ status }) => {
+  const map = {
+    checking: { dot: "bg-zinc-400 animate-pulse", text: "text-zinc-300", label: "Verificando…" },
+    online: { dot: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]", text: "text-emerald-300", label: "Servidor en línea" },
+    offline: { dot: "bg-rose-400", text: "text-rose-300", label: "Servidor offline" },
+  }[status];
+  return (
+    <div className="flex items-center gap-2 text-xs font-medium">
+      <span className={`w-1.5 h-1.5 rounded-full ${map.dot}`} />
+      <span className={map.text}>{map.label}</span>
+    </div>
+  );
+};
+
+const CredentialPill: React.FC<{ label: string; onClear: () => void }> = ({ label, onClear }) => (
+  <div className="flex items-center justify-between p-2 rounded-sm bg-white/[0.04] border border-white/10">
+    <div className="flex items-center gap-2 text-xs text-zinc-200">
+      <IconCheck />
+      {label}
+    </div>
+    <button
+      onClick={onClear}
+      className="text-[11px] font-medium text-zinc-400 hover:text-white transition-colors px-2 py-1 rounded-sm hover:bg-white/5"
+    >
+      Eliminar
+    </button>
+  </div>
+);
+
+const CredentialInput: React.FC<{
+  value: string;
+  placeholder: string;
+  onChange: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}> = ({ value, onChange, placeholder, onSave, onCancel }) => (
+  <div className="space-y-2">
+    <input
+      type="password"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="w-full bg-black/30 border border-white/10 text-zinc-200 text-sm rounded-sm focus:ring-1 focus:ring-white/40 focus:border-white/30 p-2 font-mono outline-none"
+    />
+    <div className="flex gap-2">
+      <button
+        onClick={onSave}
+        className="flex-1 py-1.5 px-3 rounded-sm text-xs font-semibold bg-white text-black hover:bg-zinc-200 transition-colors"
+      >
+        Guardar
+      </button>
+      <button
+        onClick={onCancel}
+        className="py-1.5 px-3 rounded-sm text-xs font-medium bg-white/5 hover:bg-white/10 text-zinc-300 transition-colors"
+      >
+        Cancelar
+      </button>
+    </div>
+  </div>
+);
+
+const SetupButton: React.FC<React.PropsWithChildren<{ onClick: () => void }>> = ({ onClick, children }) => (
+  <button
+    onClick={onClick}
+    className="w-full py-2 px-3 rounded-sm text-sm font-medium bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 hover:border-white/20 text-zinc-200 transition-colors flex items-center justify-center gap-2"
+  >
+    <IconKey />
+    {children}
+  </button>
+);
+
+const Slider: React.FC<{
+  label: string;
+  value: number;
+  display: string;
+  min: number;
+  max: number;
+  step: number;
+  disabled: boolean;
+  onChange: (v: number) => void;
+}> = ({ label, value, display, min, max, step, disabled, onChange }) => (
+  <div>
+    <div className="flex items-center justify-between mb-1.5">
+      <label className="text-xs font-medium text-zinc-300">{label}</label>
+      <span className="text-[11px] font-mono text-white tabular-nums">{display}</span>
+    </div>
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      onChange={(e) => onChange(parseFloat(e.target.value))}
+      disabled={disabled}
+      className="w-full disabled:opacity-50 disabled:cursor-not-allowed"
+    />
+  </div>
+);
+
+/* -------- inline icons -------- */
+
+const IconCpu = () => (
+  <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+    <rect x="9" y="9" width="6" height="6" />
+    <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3" />
+  </svg>
+);
+
+const IconDots = () => (
+  <svg viewBox="0 0 24 24" className="w-3 h-3" fill="currentColor">
+    <circle cx="6" cy="6" r="1.5" /><circle cx="12" cy="6" r="1.5" /><circle cx="18" cy="6" r="1.5" />
+    <circle cx="6" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="18" cy="12" r="1.5" />
+    <circle cx="6" cy="18" r="1.5" /><circle cx="12" cy="18" r="1.5" /><circle cx="18" cy="18" r="1.5" />
+  </svg>
+);
+
+const IconCheck = () => (
+  <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 6L9 17l-5-5" />
+  </svg>
+);
+
+const IconKey = () => (
+  <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="8" cy="15" r="4" />
+    <path d="M10.85 12.15L19 4M18 5l3 3M15 8l3 3" />
+  </svg>
+);
+
+const IconRefresh = () => (
+  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 12a9 9 0 0 1 15.5-6.4L21 8" />
+    <path d="M21 3v5h-5" />
+    <path d="M21 12a9 9 0 0 1-15.5 6.4L3 16" />
+    <path d="M3 21v-5h5" />
+  </svg>
+);
