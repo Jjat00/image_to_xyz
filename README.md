@@ -102,37 +102,103 @@ image_to_xyz/
 
 ### Requisitos previos
 
-- Node.js 18+
-- Python 3.10+
-- ~2 GB libres para el checkpoint del modelo (ver el [README del backend](./backend/README.md) para descarga)
+- **Node.js 18+** (`node --version`)
+- **Python 3.10+** (`python --version`)
+- **Git**
+- **~2 GB libres** para el checkpoint del modelo
+- (Opcional) GPU NVIDIA con CUDA o Mac con MPS — si no, corre en CPU (~5-15s por imagen)
 
-### Pasos
+---
 
-**Terminal 1 — Backend (`backend/`):**
+### 1. Clona el repo
+
+```bash
+git clone git@github.com:Jjat00/image_to_xyz.git
+cd image_to_xyz
+```
+
+---
+
+### 2. Backend (Terminal 1)
+
+#### 2.1. Entorno virtual e instalación de dependencias
 
 ```bash
 cd backend
+
+# Crear y activar el venv
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate          # Linux/Mac
+# .venv\Scripts\activate           # Windows PowerShell
+
+# Dependencias del modelo + del servidor FastAPI
 pip install -r requirements.txt
 pip install fastapi uvicorn pydantic pillow opencv-python
-
-# Descarga el checkpoint en checkpoints/depth_anything_v2_vitl.pth
-# (ver backend/README.md para los enlaces)
-
-python server.py
-# Espera "Modelo cargado exitosamente en cpu" (o cuda/mps)
 ```
 
-**Terminal 2 — Frontend (raíz del repo):**
+#### 2.2. Descarga el checkpoint del modelo
 
 ```bash
-cd image_to_xyz
-npm install        # solo la primera vez
+mkdir -p checkpoints
+cd checkpoints
+
+# Modelo recomendado: ViT-Large (335M params, ~1.3 GB)
+wget https://huggingface.co/depth-anything/Depth-Anything-V2-Large/resolve/main/depth_anything_v2_vitl.pth
+
+cd ..
+```
+
+Alternativas más livianas si tu máquina no aguanta (cambia `vitl` por `vitb` o `vits` y edita `server.py:64`):
+
+- [ViT-Base (97M, ~390 MB)](https://huggingface.co/depth-anything/Depth-Anything-V2-Base/resolve/main/depth_anything_v2_vitb.pth?download=true)
+- [ViT-Small (24M, ~100 MB)](https://huggingface.co/depth-anything/Depth-Anything-V2-Small/resolve/main/depth_anything_v2_vits.pth?download=true)
+
+#### 2.3. Arranca el servidor
+
+```bash
+python server.py
+```
+
+Espera a ver:
+```
+Cargando modelo Depth-Anything-V2 con encoder vitl...
+Modelo cargado exitosamente en cpu     # o cuda / mps
+INFO:     Uvicorn running on http://0.0.0.0:8000
+```
+
+Verifica en otra terminal o el navegador:
+```bash
+curl http://localhost:8000/
+# {"status":"ok","model":"Depth-Anything-V2","device":"cpu","encoder":"vitl"}
+```
+
+---
+
+### 3. Frontend (Terminal 2)
+
+Abre **otra terminal**, vuelve a la raíz del repo:
+
+```bash
+cd /ruta/a/image_to_xyz   # raíz del repo, NO dentro de backend/
+
+npm install               # solo la primera vez
 npm run dev
 ```
 
-Abre **http://localhost:5173** en el navegador.
+Salida esperada:
+```
+VITE v6.x  ready in xxx ms
+
+➜  Local:   http://localhost:5173/
+```
+
+---
+
+### 4. Abre la app
+
+Ve a **http://localhost:5173** en el navegador.
+
+En el panel de "Controls", el proveedor por defecto es **Local Server** y el indicador debe estar en verde 🟢. Sube una imagen y listo.
 
 ### Variables de entorno (`.env`)
 
