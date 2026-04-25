@@ -4,31 +4,49 @@
 
 ## Servidor local (`server.py`)
 
-`server.py` envuelve el modelo Depth-Anything-V2 en una API REST construida con **FastAPI + Uvicorn**. Se usa como backend del frontend `image_to_xyz`, que envía imágenes y recibe mapas de profundidad.
+`server.py` envuelve el modelo Depth-Anything-V2 en una API REST construida con **FastAPI + Uvicorn**. Es el backend del frontend `image_to_xyz` y está deployado en Railway en https://imagetoxyz-production.up.railway.app.
 
 ### ¿Qué hace?
 
-1. Al arrancar, carga el checkpoint del modelo (por defecto `vitl`, el más preciso) en GPU si hay CUDA, en MPS si es Mac, o en CPU como fallback.
-2. Expone dos endpoints:
-   - `GET /` → healthcheck (devuelve estado, dispositivo y encoder cargado).
+1. Al arrancar, **descarga el checkpoint** desde Hugging Face si no existe localmente (no necesitas bajarlo a mano).
+2. Carga el modelo en GPU si hay CUDA, en MPS si es Mac, o en CPU como fallback.
+3. Expone dos endpoints:
+   - `GET /` → healthcheck.
    - `POST /predict` → recibe una imagen en base64, devuelve el mapa de profundidad como PNG en base64.
-3. Tiene CORS abierto (`*`) para que el frontend pueda llamarlo desde el navegador.
+
+### Variables de entorno
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `PORT` | `8000` | Puerto HTTP. Railway / Render lo inyectan automáticamente. |
+| `MODEL_ENCODER` | `vits` | `vits` (24M) · `vitb` (97M) · `vitl` (335M) |
+| `CORS_ORIGINS` | `*` | Lista separada por comas de orígenes permitidos. En prod ponlo a tu URL del frontend. |
+
+### Encoders disponibles
+
+| Encoder | Params | Checkpoint | RAM (CPU) | Velocidad CPU | Calidad |
+|---------|-------:|-----------:|----------:|--------------:|---------|
+| `vits` (default) | 24.8 M | ~100 MB | ~500 MB | ~3-5 s | Buena para la mayoría de casos |
+| `vitb` | 97.5 M | ~390 MB | ~1.2 GB | ~10-15 s | Mejor detalle |
+| `vitl` | 335.3 M | ~1.3 GB | ~3.5 GB | ~25-40 s | **Calidad referente del paper** |
+
+> `vitg` (1.3B) está en el paper pero los autores no han publicado el checkpoint todavía.
 
 ### Arquitectura del servidor
 
 ```mermaid
 flowchart TD
-    Client[Frontend<br/>image_to_xyz]
+    Client[Frontend]
     Client -->|POST /predict<br/>image base64| FastAPI
 
-    subgraph Server[server.py - puerto 8000]
+    subgraph Server[server.py · puerto $PORT]
         FastAPI[FastAPI app]
-        CORS[CORS middleware<br/>allow *]
-        Decode[Decode base64<br/>→ PIL Image]
-        BGR[Convert RGB → BGR<br/>cv2 format]
+        CORS[CORS middleware<br/>$CORS_ORIGINS]
+        Decode[Decode base64 → PIL Image]
+        BGR[Convert RGB → BGR cv2]
         Infer[model.infer_image]
-        Norm[Normalize depth<br/>0-255 uint8]
-        Encode[Encode PNG<br/>→ base64]
+        Norm[Normalize depth → 0-255 uint8]
+        Encode[Encode PNG → base64]
 
         FastAPI --> CORS
         CORS --> Decode
@@ -40,37 +58,38 @@ flowchart TD
 
     subgraph Model[Modelo en memoria]
         Singleton[Singleton global<br/>recargable por encoder]
-        Weights[(checkpoints/<br/>depth_anything_v2_vitl.pth<br/>335M params)]
+        Weights[(checkpoints/<br/>depth_anything_v2_$ENCODER.pth)]
         Singleton -.lazy load.-> Weights
+        Download[ensure_checkpoint:<br/>descarga desde HuggingFace<br/>si no existe]
+        Download -.-> Weights
     end
 
     Infer --> Singleton
-    Encode -->|depth PNG base64<br/>+ width + height| Client
+    Encode -->|depth PNG b64<br/>+ width + height| Client
 ```
 
-El modelo es un **singleton global**: se carga una sola vez al arrancar y se reusa entre requests. Si el cliente pide otro encoder (`vits`, `vitb`, `vitl`), se recarga.
+El modelo es un **singleton global**: se carga una sola vez al arrancar y se reusa entre requests. Si el cliente pide otro encoder, se recarga (y se descarga si hace falta).
 
 ### Endpoints
 
 #### `GET /`
-Healthcheck.
 ```json
 {
   "status": "ok",
   "model": "Depth-Anything-V2",
-  "device": "cuda",
-  "encoder": "vitl"
+  "device": "cpu",
+  "encoder": "vits",
+  "default_encoder": "vits"
 }
 ```
 
 #### `POST /predict`
-Genera un mapa de profundidad.
 
 **Request:**
 ```json
 {
   "image": "<base64 sin prefijo data:>",
-  "encoder": "vitl"
+  "encoder": "vits"
 }
 ```
 
@@ -85,76 +104,48 @@ Genera un mapa de profundidad.
 
 ### Cómo arrancar en local
 
-#### 1. Requisitos
-
-- Python 3.10+
-- ~2 GB libres para el checkpoint `vitl` (descarga manual, ver abajo)
-- GPU NVIDIA opcional (acelera mucho); si no hay, corre en CPU (~5-15s por imagen)
-
-#### 2. Setup del entorno
-
 ```bash
-cd backend   # desde la raíz del repo image_to_xyz
-
-# Crea y activa el venv
+cd backend
 python -m venv .venv
-source .venv/bin/activate
-
-# Dependencias del modelo + del servidor
+source .venv/bin/activate          # Linux/Mac
 pip install -r requirements.txt
-pip install fastapi uvicorn pydantic pillow opencv-python
-```
-
-#### 3. Descarga el checkpoint
-
-Coloca el archivo en `checkpoints/depth_anything_v2_vitl.pth`. Descárgalo de:
-
-- [Depth-Anything-V2-Large (335M)](https://huggingface.co/depth-anything/Depth-Anything-V2-Large/resolve/main/depth_anything_v2_vitl.pth?download=true) — recomendado
-- [Depth-Anything-V2-Base (97M)](https://huggingface.co/depth-anything/Depth-Anything-V2-Base/resolve/main/depth_anything_v2_vitb.pth?download=true) — más rápido
-- [Depth-Anything-V2-Small (24M)](https://huggingface.co/depth-anything/Depth-Anything-V2-Small/resolve/main/depth_anything_v2_vits.pth?download=true) — para CPU pura
-
-```bash
-mkdir -p checkpoints
-# y mueve el .pth descargado allí
-```
-
-#### 4. Arranca el servidor
-
-```bash
 python server.py
 ```
 
-Salida esperada:
+La primera vez tarda más porque descarga el checkpoint (~100 MB para `vits`). Salida esperada:
+
 ```
-Cargando modelo Depth-Anything-V2 con encoder vitl...
-Modelo cargado exitosamente en cuda   # o mps / cpu
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+Checkpoint no encontrado en .../depth_anything_v2_vits.pth. Descargando…
+Descarga completa: ... (95.5 MB)
+Cargando modelo Depth-Anything-V2 (vits) en cpu…
+Modelo cargado en cpu
+INFO:     Uvicorn running on http://0.0.0.0:8000
 ```
 
-#### 5. Verifica
-
+Verifica:
 ```bash
 curl http://localhost:8000/
-# {"status":"ok","model":"Depth-Anything-V2","device":"cuda","encoder":"vitl"}
 ```
 
-#### 6. Conecta el frontend
-
-Levanta el frontend desde la raíz del repo:
+Para usar otro modelo:
 ```bash
-cd ..        # vuelve a image_to_xyz/
-npm run dev
-```
-Abre **http://localhost:5173** y selecciona el proveedor "Local Server" (es el default).
-
-### Cambiar el encoder por defecto
-
-Edita `server.py:64`:
-```python
-load_model('vitl')   # cámbialo a 'vitb' o 'vits' si quieres ahorrar memoria
+MODEL_ENCODER=vitl python server.py
 ```
 
-### Notas para WSL2
+### Deploy en Railway (Docker)
+
+El repo trae un `Dockerfile` y un `railway.toml`.
+
+1. **https://railway.app** → New Project → Deploy from GitHub repo.
+2. **Settings → Source → Root Directory:** `backend`
+3. **Variables:**
+   - `MODEL_ENCODER` = `vits`
+   - `CORS_ORIGINS` = la URL pública de tu frontend
+4. **Settings → Networking → Generate Domain.**
+
+El Dockerfile usa `python:3.11-slim` con torch CPU. Imagen final ~1.5 GB. Cold start ~5-10 min la primera vez (descarga torch + checkpoint). Restarts posteriores son rápidos.
+
+### Notas para WSL2 (dev local)
 
 Si el frontend te dice `ERR_CONNECTION_RESET` al hablar con `localhost:8000`, no es problema del backend sino del port-forwarding de WSL. El frontend ya está configurado con un proxy de Vite (`/depth-api` → `:8000`) que lo evita — usa siempre `http://localhost:5173` para abrir el front, no la IP de WSL.
 
