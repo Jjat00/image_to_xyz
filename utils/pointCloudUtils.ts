@@ -22,7 +22,8 @@ export const generatePointsFromImages = async (
   sampleRate: number = 2,
   depthScale: number = 10
 ): Promise<PointCloudData> => {
-  
+  console.log('Generating points with sampleRate:', sampleRate, 'depthScale:', depthScale);
+
   const [rgbImg, depthImg] = await Promise.all([
     loadImage(rgbSrc),
     loadImage(depthSrc)

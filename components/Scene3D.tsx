@@ -29,8 +29,14 @@ const PointCloud: React.FC<PointCloudProps> = ({ data, pointSize }) => {
   // Update bounding sphere when data changes
   // Attributes are updated declaratively via the children of bufferGeometry.
   useEffect(() => {
+    console.log('PointCloud data changed, positions length:', data.positions.length);
     if (geometryRef.current) {
       geometryRef.current.computeBoundingSphere();
+      // Ensure attributes are updated
+      const positionAttr = geometryRef.current.getAttribute('position');
+      const colorAttr = geometryRef.current.getAttribute('color');
+      if (positionAttr) positionAttr.needsUpdate = true;
+      if (colorAttr) colorAttr.needsUpdate = true;
     }
   }, [data]);
 
