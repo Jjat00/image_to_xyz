@@ -4,8 +4,14 @@ import { generateDepthMapWithGradio } from "./services/gradioDepthService";
 import { generateDepthMapWithOpenAI } from "./services/openaiDepthService";
 import { generateDepthMapWithLocalServer } from "./services/localServerDepthService";
 import { generatePointsFromImages } from "./utils/pointCloudUtils";
+import {
+  loadPointCloudFromFile,
+  isSupportedPointCloudFile,
+  SUPPORTED_IMPORT_EXTENSIONS,
+} from "./utils/pointCloudImport";
 import Scene3D from "./components/Scene3D";
 import Controls from "./components/Controls";
+import ExportPanel from "./components/ExportPanel";
 
 const PROVIDER_LABEL: Record<DepthModel, string> = {
   [DepthModel.LOCAL_SERVER]: "Depth-Anything-V2 · Local",
@@ -29,6 +35,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cloudInputRef = useRef<HTMLInputElement>(null);
 
   const [config, setConfig] = useState<ProcessingConfig>({
     sampleRate: 2,
@@ -112,6 +119,29 @@ function App() {
     event.target.value = "";
   };
 
+  const handleCloudFile = useCallback(async (file: File) => {
+    setErrorMsg(null);
+    setRgbImage(null);
+    setDepthImage(null);
+    setPointData(null);
+    setState(AppState.PROCESSING_POINTS);
+    try {
+      const data = await loadPointCloudFromFile(file);
+      setPointData(data);
+      setState(AppState.VIEWING);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err?.message || "No se pudo leer el archivo de nube de puntos.");
+      setState(AppState.ERROR);
+    }
+  }, []);
+
+  const handleCloudInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) handleCloudFile(file);
+    event.target.value = "";
+  };
+
   const handleRegenerate = useCallback(() => {
     if (rgbImage && depthImage) {
       setState(AppState.PROCESSING_POINTS);
@@ -134,7 +164,9 @@ function App() {
       setIsDragging(false);
       if (isProcessing) return;
       const file = e.dataTransfer?.files?.[0];
-      if (file) handleFile(file);
+      if (!file) return;
+      if (isSupportedPointCloudFile(file.name)) handleCloudFile(file);
+      else handleFile(file);
     };
     window.addEventListener("dragover", onDragOver);
     window.addEventListener("dragleave", onDragLeave);
@@ -144,7 +176,7 @@ function App() {
       window.removeEventListener("dragleave", onDragLeave);
       window.removeEventListener("drop", onDrop);
     };
-  }, [handleFile, isProcessing]);
+  }, [handleFile, handleCloudFile, isProcessing]);
 
   return (
     <div className="min-h-screen text-zinc-200 flex flex-col font-sans relative">
@@ -182,6 +214,7 @@ function App() {
                 <IconSliders />
               </button>
 
+              <OpenCloudButton disabled={isProcessing} onClick={() => cloudInputRef.current?.click()} />
               <UploadButton disabled={isProcessing} onClick={() => fileInputRef.current?.click()} />
               <input
                 ref={fileInputRef}
@@ -189,6 +222,14 @@ function App() {
                 className="hidden"
                 accept="image/*"
                 onChange={handleFileChange}
+                disabled={isProcessing}
+              />
+              <input
+                ref={cloudInputRef}
+                type="file"
+                className="hidden"
+                accept={SUPPORTED_IMPORT_EXTENSIONS.join(",")}
+                onChange={handleCloudInputChange}
                 disabled={isProcessing}
               />
             </div>
@@ -269,6 +310,9 @@ function App() {
             />
           </div>
 
+          {/* Export */}
+          {pointData && <ExportPanel data={pointData} />}
+
           <Footer />
         </aside>
 
@@ -280,6 +324,7 @@ function App() {
             pointSize={config.pointSize}
             providerLabel={PROVIDER_LABEL[config.depthModel]}
             onUploadClick={() => fileInputRef.current?.click()}
+            onOpenCloudClick={() => cloudInputRef.current?.click()}
           />
         </section>
       </main>
@@ -297,7 +342,8 @@ const ViewerArea: React.FC<{
   pointSize: number;
   providerLabel: string;
   onUploadClick: () => void;
-}> = ({ state, pointData, pointSize, providerLabel, onUploadClick }) => {
+  onOpenCloudClick: () => void;
+}> = ({ state, pointData, pointSize, providerLabel, onUploadClick, onOpenCloudClick }) => {
   if (pointData) {
     return (
       <div className="w-full h-full animate-fade-in">
@@ -323,16 +369,21 @@ const ViewerArea: React.FC<{
       {state === AppState.GENERATING_DEPTH || state === AppState.PROCESSING_POINTS ? (
         <ProcessingState state={state} providerLabel={providerLabel} />
       ) : (
-        <EmptyState providerLabel={providerLabel} onUploadClick={onUploadClick} />
+        <EmptyState
+          providerLabel={providerLabel}
+          onUploadClick={onUploadClick}
+          onOpenCloudClick={onOpenCloudClick}
+        />
       )}
     </div>
   );
 };
 
-const EmptyState: React.FC<{ providerLabel: string; onUploadClick: () => void }> = ({
-  providerLabel,
-  onUploadClick,
-}) => (
+const EmptyState: React.FC<{
+  providerLabel: string;
+  onUploadClick: () => void;
+  onOpenCloudClick: () => void;
+}> = ({ providerLabel, onUploadClick, onOpenCloudClick }) => (
   <div className="text-center space-y-6 max-w-lg z-10 animate-scale-in">
     <div className="relative w-20 h-20 mx-auto">
       <div className="absolute inset-0 rounded-md bg-white/5 blur-xl animate-pulse-soft" />
@@ -356,16 +407,29 @@ const EmptyState: React.FC<{ providerLabel: string; onUploadClick: () => void }>
       </p>
     </div>
 
-    <button
-      onClick={onUploadClick}
-      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-sm font-semibold text-sm bg-white text-black hover:bg-zinc-200 transition-colors"
-    >
-      <IconUpload className="w-4 h-4" />
-      Subir imagen
-      <span className="text-[10px] font-mono text-black/60 hidden sm:inline ml-1">
-        o arrástrala
-      </span>
-    </button>
+    <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+      <button
+        onClick={onUploadClick}
+        className="inline-flex items-center gap-2 px-6 py-2.5 rounded-sm font-semibold text-sm bg-white text-black hover:bg-zinc-200 transition-colors"
+      >
+        <IconUpload className="w-4 h-4" />
+        Subir imagen
+        <span className="text-[10px] font-mono text-black/60 hidden sm:inline ml-1">
+          o arrástrala
+        </span>
+      </button>
+
+      <button
+        onClick={onOpenCloudClick}
+        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-sm font-medium text-sm bg-white/[0.04] border border-white/10 text-zinc-200 hover:bg-white/[0.08] hover:border-white/20 transition-colors"
+      >
+        <IconCube className="w-4 h-4" />
+        Cargar nube
+        <span className="text-[10px] font-mono text-zinc-500 hidden sm:inline ml-1">
+          .ply .xyz .pcd .csv
+        </span>
+      </button>
+    </div>
 
     <div className="flex items-center justify-center gap-2 pt-2 text-[11px] font-mono text-zinc-500">
       <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-pulse" />
@@ -456,6 +520,26 @@ const UploadButton: React.FC<{ disabled: boolean; onClick: () => void }> = ({
   </button>
 );
 
+const OpenCloudButton: React.FC<{ disabled: boolean; onClick: () => void }> = ({
+  disabled,
+  onClick,
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    title="Cargar una nube de puntos (.ply, .xyz, .pcd, .csv)"
+    className={`inline-flex items-center gap-2 px-3 sm:px-4 py-2 rounded-sm text-sm font-medium transition-colors border ${
+      disabled
+        ? "bg-white/5 text-zinc-500 border-white/5 cursor-not-allowed"
+        : "bg-white/[0.04] text-zinc-200 border-white/10 hover:bg-white/[0.08] hover:border-white/20"
+    }`}
+  >
+    <IconCube className="w-4 h-4" />
+    <span className="hidden sm:inline">Abrir nube</span>
+  </button>
+);
+
 const Footer: React.FC = () => (
   <div className="text-[10px] text-zinc-500 font-mono px-2 pt-2">
     <span className="text-zinc-400">DepthGen 3D</span> · v0.1 · React Three Fiber
@@ -469,6 +553,14 @@ const IconUpload: React.FC<{ className?: string }> = ({ className = "w-4 h-4" })
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
     <polyline points="17 8 12 3 7 8" />
     <line x1="12" y1="3" x2="12" y2="15" />
+  </svg>
+);
+
+const IconCube: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
+  <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+    <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+    <line x1="12" y1="22.08" x2="12" y2="12" />
   </svg>
 );
 
