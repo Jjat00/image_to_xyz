@@ -33,16 +33,16 @@ const PROVIDERS: Array<{
   badge: string;
 }> = [
   {
-    value: DepthModel.LOCAL_SERVER,
-    label: "Local Server",
-    blurb: "Depth-Anything-V2 vía FastAPI local",
+    value: DepthModel.HUGGINGFACE,
+    label: "Hugging Face",
+    blurb: "Depth-Anything-V2 en Spaces · sin instalar nada",
     badge: "Recomendado",
   },
   {
-    value: DepthModel.HUGGINGFACE,
-    label: "Hugging Face",
-    blurb: "Spaces · cloud, gratis con token",
-    badge: "Cloud",
+    value: DepthModel.LOCAL_SERVER,
+    label: "Local Server",
+    blurb: "Depth-Anything-V2 vía FastAPI en tu máquina",
+    badge: "Local",
   },
   {
     value: DepthModel.OPENAI,

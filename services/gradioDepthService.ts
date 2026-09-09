@@ -97,7 +97,7 @@ export const generateDepthMapWithGradio = async (
       depthImageUrl = grayscaleDepthMap.url;
     } else if (grayscaleDepthMap?.path) {
       // Si es un path relativo, construir la URL completa
-      depthImageUrl = `https://depth-anything-depth-anything-v2.hf.space/file=${grayscaleDepthMap.path}`;
+      depthImageUrl = `https://depth-anything-depth-anything-v2.hf.space/gradio_api/file=${grayscaleDepthMap.path}`;
     } else {
       console.error("Gradio Service: Formato de respuesta inesperado:", data);
       throw new Error("Formato de respuesta inesperado del modelo");
@@ -126,7 +126,7 @@ export const generateDepthMapWithGradio = async (
       error.message?.includes("quota")
     ) {
       throw new Error(
-        "Cuota de Hugging Face agotada. Agrega tu token de HF (gratis) para obtener más cuota, o usa la opción Local."
+        "Cuota de Hugging Face agotada. Agrega tu token de HF (gratis) para obtener más cuota, o cambia a OpenAI."
       );
     }
 

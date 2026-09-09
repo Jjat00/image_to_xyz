@@ -2,9 +2,9 @@
 
 Aplicación web que convierte una **imagen 2D en una nube de puntos 3D navegable** usando un mapa de profundidad estimado por IA. El render se hace en el navegador con Three.js / React Three Fiber.
 
-🌐 **Live demo:**
-- **Frontend** → https://image-to-xyz.vercel.app
-- **Backend (API)** → https://imagetoxyz-production.up.railway.app
+🌐 **Live demo:** https://image-to-xyz.vercel.app
+
+En producción la app usa el Space público de **Hugging Face** para estimar la profundidad, así que no necesita backend propio. El backend de `backend/` sigue siendo la opción para desarrollo local y para quien quiera autohospedarlo.
 
 Repo monorepo con dos partes:
 
@@ -16,7 +16,7 @@ Repo monorepo con dos partes:
 ## ¿Qué hace?
 
 1. El usuario sube una imagen.
-2. Se envía a un proveedor de **estimación de profundidad** (configurable: servidor local/Railway, OpenAI, HuggingFace).
+2. Se envía a un proveedor de **estimación de profundidad** (por defecto el Space de Hugging Face; también servidor propio u OpenAI).
 3. El proveedor devuelve un **mapa de profundidad** (escala de grises) del mismo tamaño que la imagen original.
 4. El frontend combina la imagen RGB y el mapa de profundidad en una **nube de puntos 3D** (cada píxel se convierte en un punto cuyo color es el del píxel original y cuyo Z viene del mapa de profundidad).
 5. La nube se renderiza con WebGL en un visor interactivo (zoom, rotación, parámetros editables).
@@ -30,10 +30,10 @@ Repo monorepo con dos partes:
 ```mermaid
 flowchart LR
     User([Usuario]) -->|sube imagen| Vercel[Vercel<br/>image-to-xyz.vercel.app]
-    Vercel -->|VITE_DEPTH_API_URL<br/>POST /predict| Railway[Railway<br/>FastAPI · Docker · CPU]
-    Railway -->|inferencia ViT-S| Model[(Depth-Anything-V2<br/>vits checkpoint)]
-    Model --> Railway
-    Railway -->|depth PNG b64| Vercel
+    Vercel -->|@gradio/client<br/>POST /on_submit| HF[Hugging Face Space<br/>depth-anything/Depth-Anything-V2]
+    HF -->|inferencia en ZeroGPU| Model[(Depth-Anything-V2)]
+    Model --> HF
+    HF -->|depth PNG| Vercel
     Vercel -->|RGB + depth| ThreeJS[Three.js<br/>WebGL en navegador]
     ThreeJS -->|nube 3D| User
 ```
@@ -60,8 +60,8 @@ El componente `Controls.tsx` permite seleccionar entre **3 backends** de estimac
 
 | Proveedor | Service | Notas |
 |-----------|---------|-------|
-| `LOCAL_SERVER` (default) | `services/localServerDepthService.ts` | Llama al backend FastAPI (local en dev, Railway en prod). **Recomendado.** |
-| `HUGGINGFACE` | `services/gradioDepthService.ts` | Usa el Space público de Gradio. Token HF opcional para más cuota. |
+| `HUGGINGFACE` (default) | `services/gradioDepthService.ts` | Space público de Gradio, funciona sin token. **Recomendado.** El token HF solo amplía la cuota de ZeroGPU. Requiere `@gradio/client` >= 2.5.1 (ver Troubleshooting). |
+| `LOCAL_SERVER` | `services/localServerDepthService.ts` | Llama al backend FastAPI de `backend/`. Pensado para desarrollo local. |
 | `OPENAI` | `services/openaiDepthService.ts` | Usa la API de OpenAI Images. Requiere API key del usuario. |
 
 ### Flujo interno del frontend
@@ -322,13 +322,14 @@ npm install               # solo la primera vez
 npm run dev
 ```
 
-Abre **http://localhost:5173**. En el panel "Controls" el proveedor por defecto es **Local Server** y el indicador debe estar en verde 🟢. Sube una imagen o arrástrala.
+Abre **http://localhost:5173**. El proveedor por defecto es **Hugging Face** y funciona sin configurar nada. Si prefieres el backend propio, levanta `backend/` y elige **Local Server** en el panel: el indicador debe ponerse en verde 🟢. Sube una imagen o arrástrala.
 
 #### Variables de entorno del frontend (`.env`)
 
 ```bash
-# Producción (Vercel): apunta al backend de Railway
-VITE_DEPTH_API_URL=https://imagetoxyz-production.up.railway.app
+# Solo si eliges el proveedor "Local Server" apuntando a un backend remoto propio.
+# En producción no hace falta: el proveedor por defecto es Hugging Face.
+VITE_DEPTH_API_URL=https://tu-backend.example.com
 
 # Dev: si está vacío, el frontend usa /depth-api y Vite hace proxy a :8000
 ```
@@ -337,7 +338,14 @@ VITE_DEPTH_API_URL=https://imagetoxyz-production.up.railway.app
 
 ## Deploy en producción
 
-### Backend → Railway
+### Frontend → Vercel (es todo lo que necesitas)
+
+Con el proveedor por defecto (Hugging Face) el frontend es autosuficiente: no hay backend que desplegar ni variables que configurar.
+
+### Backend → Railway (opcional, autohospedaje)
+
+> [!WARNING]
+> Un backend con Depth-Anything-V2 residente cuesta del orden de **10 USD por GB-mes de RAM** en Railway, se mida o no tráfico. Con el modelo `vitl` cargado son ~2,4 GB, es decir unos 24 USD al mes aunque nadie use la demo. Si lo despliegas, activa **Serverless (app sleeping)** y fija `MODEL_ENCODER=vits`.
 
 El repo incluye `backend/Dockerfile` y `backend/railway.toml`.
 
@@ -350,19 +358,18 @@ El repo incluye `backend/Dockerfile` y `backend/railway.toml`.
 
 El servidor descarga el checkpoint en el primer arranque, así que no necesitas commitear los `.pth`.
 
-### Frontend → Vercel
+#### Pasos en Vercel
 
 1. **https://vercel.com** → Add New → Project → importa `image_to_xyz`.
 2. Framework Preset: **Vite** (autodetectado).
-3. **Environment Variables:**
-   - `VITE_DEPTH_API_URL` = la URL pública de Railway
+3. **Environment Variables:** ninguna es obligatoria. Define `VITE_DEPTH_API_URL` solo si desplegaste un backend propio y quieres que la opción "Local Server" lo encuentre.
 4. Deploy. La URL queda algo tipo `image-to-xyz.vercel.app`.
 
 `vercel.json` ignora cambios que solo tocan `backend/` para evitar rebuilds inútiles del frontend.
 
-### Cierra el círculo de CORS
+### Cierra el círculo de CORS (solo con backend propio)
 
-Una vez tengas las dos URLs, vuelve a Railway y aprieta `CORS_ORIGINS` al dominio exacto de Vercel (en lugar de `*`). Railway redeplea solo.
+Si desplegaste el backend, aprieta `CORS_ORIGINS` al dominio exacto de Vercel (en lugar de `*`). Railway redeplea solo.
 
 ---
 
@@ -372,6 +379,7 @@ Una vez tengas las dos URLs, vuelve a Railway y aprieta `CORS_ORIGINS` al domini
 |---------|----------------|----------|
 | "Servidor offline" en la UI (local) | Backend no está corriendo | Arranca `python server.py` en `backend/` |
 | "Servidor offline" en producción | `VITE_DEPTH_API_URL` mal o falta `https://` | Revísalo en Vercel → Settings → Env Vars y **redeplea** (Vercel inyecta env solo en build) |
+| `TypeError: Failed to fetch` con el proveedor Hugging Face, y en consola `The value of the 'Access-Control-Allow-Credentials' header in the response is ''` | `@gradio/client` < 2.5.1 pide `/config` con `credentials: "include"` hardcodeado, y el preflight del Space no devuelve esa cabecera | Actualiza a `@gradio/client` >= 2.5.1, que usa `credentials: "same-origin"`. Falla solo en navegador; desde Node funciona |
 | CORS error en consola | `CORS_ORIGINS` no incluye tu URL de Vercel | Ajústalo en Railway con la URL exacta |
 | `ERR_CONNECTION_RESET` a `localhost:8000` (WSL2) | localStorage guardó URL absoluta vieja | `localStorage.removeItem("depth_server_url")` y recarga |
 | Vite no arranca por puerto ocupado | `:5173` en uso | Cambia `port` en `vite.config.ts:9` |
@@ -394,4 +402,4 @@ npm run preview   # sirve el build localmente
 
 - **Frontend:** React 19 · Vite 6 · Three.js · React Three Fiber · drei · Tailwind (CDN)
 - **Backend:** Python 3.11 · FastAPI · Uvicorn · PyTorch (CPU) · Depth-Anything-V2 (DPT + DINOv2)
-- **Hosting:** Vercel (frontend) · Railway (backend en Docker)
+- **Hosting:** Vercel (frontend) · inferencia en el Space público de Hugging Face · el backend de `backend/` es opcional y autohospedable
