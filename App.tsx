@@ -41,7 +41,7 @@ function App() {
     sampleRate: 2,
     depthScale: 5,
     pointSize: 0.05,
-    depthModel: DepthModel.LOCAL_SERVER,
+    depthModel: DepthModel.HUGGINGFACE,
   });
 
   const isProcessing =
